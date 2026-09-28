@@ -35,10 +35,15 @@ jobs:
       - name: Configure Android SDK
         run: echo "sdk.dir=/usr/local/lib/android/sdk" > hushfeed/local.properties
 
-      - name: Build Hushfeed patches
+      - name: Refresh dependency verification
         working-directory: hushfeed
         run: |
           chmod +x gradlew
+          ./gradlew --write-verification-metadata sha256 :patches:buildAndroid :patches:generatePatchesList --stacktrace
+
+      - name: Build Hushfeed patches
+        working-directory: hushfeed
+        run: |
           ./gradlew :patches:buildAndroid :patches:generatePatchesList --stacktrace
 
       - name: Collect output
