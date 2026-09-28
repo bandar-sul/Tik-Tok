@@ -22,9 +22,6 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
-
       - name: Clone Hushfeed 0.64.0
         run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
 
@@ -32,7 +29,7 @@ jobs:
         run: python3 scripts/make_arabic.py hushfeed
 
       - name: Configure Android SDK
-        run: echo "sdk.dir=${ANDROID_HOME}" > hushfeed/local.properties
+        run: echo "sdk.dir=/usr/local/lib/android/sdk" > hushfeed/local.properties
 
       - name: Build Hushfeed patches
         working-directory: hushfeed
