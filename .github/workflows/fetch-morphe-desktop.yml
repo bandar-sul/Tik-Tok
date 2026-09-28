@@ -1,0 +1,25 @@
+name: Fetch Morphe Desktop
+
+on:
+  push:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Morphe Desktop 1.17.0
+        run: |
+          curl -L --fail --retry 3             -o morphe-desktop-1.17.0-all.jar             https://github.com/MorpheApp/morphe-desktop/releases/download/v1.17.0/morphe-desktop-1.17.0-all.jar
+          sha256sum morphe-desktop-1.17.0-all.jar
+
+      - name: Upload Morphe Desktop
+        uses: actions/upload-artifact@v4
+        with:
+          name: morphe-desktop-1.17.0
+          path: morphe-desktop-1.17.0-all.jar
+          if-no-files-found: error
+          retention-days: 1
