@@ -1,0 +1,124 @@
+#!/usr/bin/env python3
+import csv
+import sys
+from pathlib import Path
+
+repo = Path(sys.argv[1] if len(sys.argv) > 1 else "hushfeed")
+src = repo / "extensions/tiktok/src/main/l10n/en.csv"
+out = repo / "extensions/tiktok/src/main/l10n/ar.tsv"
+
+AR = {
+    "About":"حول",
+    "Activity":"النشاط",
+    "Add":"إضافة",
+    "Ads":"الإعلانات",
+    "Advanced":"متقدم",
+    "All":"الكل",
+    "Allow screenshots and Circle to Search":"السماح بلقطات الشاشة وميزة Circle to Search",
+    "Always show publish date":"إظهار تاريخ النشر دائمًا",
+    "App":"التطبيق",
+    "Appearance":"المظهر",
+    "Apply":"تطبيق",
+    "Audio":"الصوت",
+    "Auto translate comments":"ترجمة التعليقات تلقائيًا",
+    "Auto-advance":"الانتقال التلقائي",
+    "Back":"رجوع",
+    "Back up settings":"نسخ الإعدادات احتياطيًا",
+    "Backup and restore":"النسخ الاحتياطي والاستعادة",
+    "Block contact list access":"منع الوصول إلى جهات الاتصال",
+    "Block installed app scanning":"منع فحص التطبيقات المثبتة",
+    "Block location":"منع الموقع",
+    "Blocked":"محظور",
+    "Browse":"استعراض",
+    "Camera and microphone in use":"الكاميرا والميكروفون قيد الاستخدام",
+    "Cancel":"إلغاء",
+    "Captions":"الترجمة النصية",
+    "Comments":"التعليقات",
+    "Copy":"نسخ",
+    "Country":"الدولة",
+    "Custom":"مخصص",
+    "Default":"الافتراضي",
+    "Diagnostics":"التشخيص",
+    "Disable login requirement":"إلغاء فرض تسجيل الدخول",
+    "Disable telemetry":"تعطيل القياسات والتتبع",
+    "Done":"تم",
+    "Download":"تنزيل",
+    "Downloads":"التنزيلات",
+    "Download quality":"جودة التنزيل",
+    "Download video":"تنزيل الفيديو",
+    "Download audio":"تنزيل الصوت",
+    "Download subtitles":"تنزيل الترجمة النصية",
+    "Enable":"تفعيل",
+    "Enabled":"مفعّل",
+    "Disabled":"معطّل",
+    "Feed filter":"تصفية الصفحة",
+    "Feed screen":"واجهة الفيديو",
+    "Feed tabs":"تبويبات الصفحة",
+    "Feature Gate Lab":"مختبر ميزات TikTok",
+    "Fix Google login":"إصلاح تسجيل الدخول بحساب Google",
+    "Hide AI content":"إخفاء محتوى الذكاء الاصطناعي",
+    "Hide ads":"إخفاء الإعلانات",
+    "Hide livestreams":"إخفاء البث المباشر",
+    "Hide photo posts":"إخفاء منشورات الصور",
+    "Hide Shop":"إخفاء متجر TikTok",
+    "Hide stories":"إخفاء القصص",
+    "Hide suggested accounts":"إخفاء الحسابات المقترحة",
+    "Hushfeed":"هاشفيد",
+    "Inbox":"صندوق الوارد",
+    "Language":"اللغة",
+    "Languages":"اللغات",
+    "Low":"منخفض",
+    "Medium":"متوسط",
+    "High":"عالٍ",
+    "Mute feed videos":"كتم فيديوهات الصفحة",
+    "No results":"لا توجد نتائج",
+    "None":"لا شيء",
+    "Not interested":"غير مهتم",
+    "Open external links directly":"فتح الروابط الخارجية مباشرة",
+    "Pause Hushfeed":"إيقاف Hushfeed مؤقتًا",
+    "Playback":"التشغيل",
+    "Playback quality":"جودة التشغيل",
+    "Playback speed":"سرعة التشغيل",
+    "Privacy":"الخصوصية",
+    "Region":"المنطقة",
+    "Region preset":"إعداد منطقة جاهز",
+    "Remove feed ads":"إزالة إعلانات الصفحة",
+    "Reset":"إعادة ضبط",
+    "Reset settings":"إعادة ضبط الإعدادات",
+    "Restart":"إعادة التشغيل",
+    "Restart required":"إعادة التشغيل مطلوبة",
+    "Restore":"استعادة",
+    "Restore settings":"استعادة الإعدادات",
+    "Retry":"إعادة المحاولة",
+    "Save":"حفظ",
+    "Search":"بحث",
+    "Search settings":"البحث في الإعدادات",
+    "Screen time":"وقت الشاشة",
+    "Settings":"الإعدادات",
+    "Show seekbar":"إظهار شريط التقدم",
+    "SIM spoof":"تغيير بيانات SIM",
+    "Stop video looping":"إيقاف تكرار الفيديو",
+    "Translate comments":"ترجمة التعليقات",
+    "Turn Hushfeed back on":"إعادة تشغيل Hushfeed",
+    "Undo":"تراجع",
+    "Unblock":"إلغاء الحظر",
+    "Use system font":"استخدام خط النظام",
+    "Video":"الفيديو",
+    "Video quality":"جودة الفيديو",
+    "Watermark":"العلامة المائية",
+    "Yes":"نعم",
+}
+
+with src.open("r", encoding="utf-8", newline="") as f:
+    rows = list(csv.DictReader(f))
+
+lines = ["# Arabic translation for Hushfeed 0.64.0"]
+for row in rows:
+    source = row["source"]
+    target = AR.get(source, source)
+    source = source.replace("\t", " ").replace("\n", "\\n")
+    target = target.replace("\t", " ").replace("\n", "\\n")
+    lines.append(source + "\t" + target)
+
+out.write_text("\n".join(lines) + "\n", encoding="utf-8")
+print(f"Wrote {out} ({len(rows)} entries, Arabic core UI + English fallback)")
