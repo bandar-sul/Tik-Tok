@@ -1,0 +1,58 @@
+name: Build Arabic Hushfeed Bundle
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Clone Hushfeed 0.64.0
+        run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
+
+      - name: Add Arabic localization
+        run: python3 scripts/make_arabic.py hushfeed
+
+      - name: Configure Android SDK
+        run: echo "sdk.dir=${ANDROID_HOME}" > hushfeed/local.properties
+
+      - name: Build Hushfeed patches
+        working-directory: hushfeed
+        run: |
+          chmod +x gradlew
+          ./gradlew :patches:buildAndroid :patches:generatePatchesList --stacktrace
+
+      - name: Collect output
+        run: |
+          mkdir -p output
+          MPP="$(find hushfeed/patches/build -type f -name '*.mpp' | head -n1)"
+          test -n "$MPP"
+          cp "$MPP" output/Hushfeed-0.64.0-Arabic.mpp
+          cp hushfeed/patches-list.json output/patches-list-arabic.json || true
+          sha256sum output/Hushfeed-0.64.0-Arabic.mpp > output/SHA256SUMS.txt
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Hushfeed-0.64.0-Arabic
+          path: output/
+          if-no-files-found: error
+          retention-days: 14
