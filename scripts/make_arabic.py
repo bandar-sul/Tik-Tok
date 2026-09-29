@@ -119,7 +119,7 @@ AR = {
     "Yes":"نعم",
 }
 
-PLACEHOLDER = re.compile(r"%(?:\\d+\\$)?[a-zA-Z]|%%")
+PLACEHOLDER = re.compile(r"%(?:\d+\$)?[a-zA-Z]|%%")
 BRANDS = ["Hushfeed", "TikTok", "Google", "SIM", "JSON", "URL", "Android", "Circle to Search"]
 
 def protect(text):
