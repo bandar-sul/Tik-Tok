@@ -29,6 +29,9 @@ jobs:
       - name: Clone Hushfeed 0.64.0
         run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
 
+      - name: Install Arabic translation dependency
+        run: python3 -m pip install --disable-pip-version-check -q deep-translator
+
       - name: Add Arabic localization
         run: |
           python3 scripts/make_arabic.py hushfeed
@@ -56,14 +59,14 @@ jobs:
           mkdir -p output
           MPP="$(find hushfeed/patches/build -type f -name '*.mpp' | head -n1)"
           test -n "$MPP"
-          cp "$MPP" output/Hushfeed-0.64.0-Arabic.mpp
+          cp "$MPP" output/Hushfeed-0.64.0-Arabic-Full.mpp
           cp hushfeed/patches-list.json output/patches-list-arabic.json || true
-          sha256sum output/Hushfeed-0.64.0-Arabic.mpp > output/SHA256SUMS.txt
+          sha256sum output/Hushfeed-0.64.0-Arabic-Full.mpp > output/SHA256SUMS.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Hushfeed-0.64.0-Arabic
+          name: Hushfeed-0.64.0-Arabic-Full
           path: output/
           if-no-files-found: error
           retention-days: 14
