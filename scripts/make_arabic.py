@@ -119,7 +119,7 @@ AR = {
     "Yes":"نعم",
 }
 
-PLACEHOLDER = re.compile(r"%(?:\\d+\\$)?[a-zA-Z]|%%")
+PLACEHOLDER = re.compile(r"%(?:\d+\$)?[a-zA-Z]|%%")
 BRANDS = ["Circle to Search", "Hushfeed", "TikTok", "Android", "Google", "SIM", "JSON", "URL"]
 PROTECTED = re.compile(
     "(" + PLACEHOLDER.pattern + "|" + "|".join(re.escape(x) for x in sorted(BRANDS, key=len, reverse=True)) + ")"
@@ -135,7 +135,7 @@ def split_for_translation(source):
             parts.append(("literal", piece))
             continue
         # Preserve surrounding whitespace exactly; translate only the human-language core.
-        m = re.match(r"^(\\s*)(.*?)(\\s*)$", piece, flags=re.S)
+        m = re.match(r"^(\s*)(.*?)(\s*)$", piece, flags=re.S)
         lead, core, tail = m.groups()
         if lead:
             parts.append(("literal", lead))
