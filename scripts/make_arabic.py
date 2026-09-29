@@ -192,7 +192,11 @@ for start_at in range(0, len(unique_texts), BATCH):
         )
     outputs = tokenizer.batch_decode(generated, skip_special_tokens=True)
     for source_fragment, target_fragment in zip(batch, outputs):
-        fragment_translation[source_fragment] = target_fragment.strip()
+        # Source fragments never contain format placeholders. If Marian invents one
+        # (for example translating "changed" as "%s"), discard it before rebuilding
+        # the full string. Real placeholders are kept outside the model and reinserted literally.
+        cleaned = PLACEHOLDER.sub("", target_fragment).strip()
+        fragment_translation[source_fragment] = cleaned
     print(f"Translated fragments {min(start_at+BATCH, len(unique_texts))}/{len(unique_texts)}", flush=True)
 
 for source, parts in parts_by_source.items():
