@@ -65,17 +65,8 @@ jobs:
           PAGE='https://www.apkmirror.com/apk/tiktok-pte-ltd/tik-tok-including-musical-ly/tiktok-47-0-3-release/tiktok-47-0-3-4-android-apk-download/'
           UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36'
           curl -fLsS -A "$UA" -c work/cookies.txt "$PAGE" -o work/page.html
-          LINK=$(python3 - <<'PY'
-import html,re
-s=open('work/page.html',encoding='utf-8',errors='ignore').read()
-m=re.search(r'href="([^"]*?/download/\?forcebaseapk=true&amp;key=[^"]+)"',s)
-if not m:
-    m=re.search(r'href="([^"]*?/download/\?forcebaseapk=true&key=[^"]+)"',s)
-if not m:
-    raise SystemExit("APKMirror download nonce not found")
-print(html.unescape(m.group(1)))
-PY
-          )
+          LINK=$(python3 -c 'import html,re; s=open("work/page.html",encoding="utf-8",errors="ignore").read(); m=re.search(r"href=\\\"([^\\\"]*?/download/\\?forcebaseapk=true(?:&amp;|&)key=[^\\\"]+)\\\"",s); print(html.unescape(m.group(1)) if m else "")')
+          test -n "$LINK"
           case "$LINK" in
             http*) URL="$LINK" ;;
             *) URL="https://www.apkmirror.com$LINK" ;;
