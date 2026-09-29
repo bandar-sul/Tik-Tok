@@ -2,16 +2,16 @@
 import csv
 import re
 import sys
-import time
 from pathlib import Path
 
-from deep_translator import GoogleTranslator
+import torch
+from transformers import MarianMTModel, MarianTokenizer
 
 repo = Path(sys.argv[1] if len(sys.argv) > 1 else "hushfeed")
 src = repo / "extensions/tiktok/src/main/l10n/en.csv"
 out = repo / "extensions/tiktok/src/main/l10n/ar.tsv"
 
-# Curated translations for the most visible Hushfeed UI.
+# Human-curated translations for the most visible Hushfeed UI.
 AR = {
     "About":"حول",
     "Activity":"النشاط",
@@ -119,92 +119,102 @@ AR = {
     "Yes":"نعم",
 }
 
-PLACEHOLDER = re.compile(r"%(?:\d+\$)?[a-zA-Z]|%%")
-BRAND_TOKENS = ["Hushfeed", "TikTok", "Google", "SIM", "JSON", "URL", "Android", "Circle to Search"]
+PLACEHOLDER = re.compile(r"%(?:\\d+\\$)?[a-zA-Z]|%%")
+BRANDS = ["Hushfeed", "TikTok", "Google", "SIM", "JSON", "URL", "Android", "Circle to Search"]
 
 def protect(text):
-    tokens = []
-    def sub(m):
-        key = f"ZXPH{len(tokens)}XZ"
-        tokens.append((key, m.group(0)))
-        return key
-    text = PLACEHOLDER.sub(sub, text)
-    for brand in BRAND_TOKENS:
+    items = []
+    def ph(m):
+        token = f"ZXPH{len(items)}XZ"
+        items.append((token, m.group(0)))
+        return token
+    text = PLACEHOLDER.sub(ph, text)
+    for brand in BRANDS:
         if brand in text:
-            key = f"ZXBR{len(tokens)}XZ"
-            tokens.append((key, brand))
-            text = text.replace(brand, key)
-    return text, tokens
+            token = f"ZXBR{len(items)}XZ"
+            items.append((token, brand))
+            text = text.replace(brand, token)
+    return text, items
 
-def restore(text, tokens):
-    for key, value in tokens:
-        text = text.replace(key, value)
-    return text
-
-def translate_one(translator, source):
-    protected, tokens = protect(source)
-    for attempt in range(4):
-        try:
-            result = translator.translate(protected)
-            # Stay comfortably below Google's documented request-rate limit.
-            time.sleep(0.35)
-            if not result:
-                raise RuntimeError("empty translation")
-            result = restore(result, tokens)
-            # Ensure formatting placeholders are byte-for-byte preserved.
-            if sorted(PLACEHOLDER.findall(source)) != sorted(PLACEHOLDER.findall(result)):
-                raise RuntimeError(f"placeholder mismatch: {source!r} -> {result!r}")
-            return result
-        except Exception as e:
-            if attempt == 3:
-                raise
-            name = type(e).__name__
-            if "TooManyRequests" in name:
-                wait = 20 * (attempt + 1)
-            else:
-                wait = 2.0 * (attempt + 1)
-            print(f"Translation retry after {name}; waiting {wait}s", flush=True)
-            time.sleep(wait)
-    raise RuntimeError("unreachable")
+def restore(text, items):
+    for token, value in items:
+        # Marian can add spaces around synthetic tokens.
+        text = re.sub(r"\\s*"+re.escape(token)+r"\\s*", value, text)
+    return text.strip()
 
 with src.open("r", encoding="utf-8", newline="") as f:
     rows = list(csv.DictReader(f))
 
-translator = GoogleTranslator(source="en", target="ar")
-translated = {}
-auto_count = 0
+model_name = "Helsinki-NLP/opus-mt-en-ar"
+print("Loading offline translation model:", model_name, flush=True)
+tokenizer = MarianTokenizer.from_pretrained(model_name)
+model = MarianMTModel.from_pretrained(model_name)
+model.eval()
 
-for index, row in enumerate(rows, 1):
+pending = []
+protected_meta = {}
+translated = dict(AR)
+
+for row in rows:
     source = row["source"]
-    if source in AR:
-        target = AR[source]
-    else:
-        target = translate_one(translator, source)
-        auto_count += 1
-        if auto_count % 50 == 0:
-            print(f"Auto-translated {auto_count} strings...", flush=True)
-    translated[source] = target
+    if source in translated:
+        continue
+    text, meta = protect(source)
+    pending.append((source, text))
+    protected_meta[source] = meta
 
-lines = ["# Arabic translation for Hushfeed 0.64.0 — full Arabic"]
+BATCH = 12
+for start in range(0, len(pending), BATCH):
+    batch = pending[start:start+BATCH]
+    texts = [x[1] for x in batch]
+    encoded = tokenizer(
+        texts,
+        return_tensors="pt",
+        padding=True,
+        truncation=True,
+        max_length=512,
+    )
+    with torch.inference_mode():
+        generated = model.generate(
+            **encoded,
+            max_new_tokens=512,
+            num_beams=3,
+            early_stopping=True,
+        )
+    outputs = tokenizer.batch_decode(generated, skip_special_tokens=True)
+    for (source, _), target in zip(batch, outputs):
+        target = restore(target, protected_meta[source])
+        wanted = sorted(PLACEHOLDER.findall(source))
+        got = sorted(PLACEHOLDER.findall(target))
+        if wanted != got:
+            raise SystemExit(f"Placeholder mismatch: {source!r} -> {target!r}: {wanted} != {got}")
+        translated[source] = target
+    print(f"Translated {min(start+BATCH, len(pending))}/{len(pending)} non-curated strings", flush=True)
+
+lines = ["# Arabic translation for Hushfeed 0.64.0 — full static Arabic"]
 for row in rows:
     source = row["source"]
     target = translated[source]
-    source = source.replace("\t", " ").replace("\n", "\\n")
-    target = target.replace("\t", " ").replace("\n", "\\n")
-    lines.append(source + "\t" + target)
+    s = source.replace("\t", " ").replace("\n", "\\n")
+    t = target.replace("\t", " ").replace("\n", "\\n")
+    lines.append(s + "\t" + t)
 
 out.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
-# Fail the build if ordinary Latin-only UI strings were silently left untranslated.
-latin_only = []
+unchanged = []
 for source, target in translated.items():
-    has_letters = re.search(r"[A-Za-z]", target)
-    has_arabic = re.search(r"[\u0600-\u06FF]", target)
-    if has_letters and not has_arabic and target == source and source not in BRAND_TOKENS:
-        latin_only.append(source)
+    if target == source and re.search(r"[A-Za-z]", source) and not re.search(r"[\\u0600-\\u06FF]", target):
+        # Brand-only / format-only strings are okay; ordinary UI strings are not.
+        stripped = source
+        for b in BRANDS:
+            stripped = stripped.replace(b, "")
+        stripped = PLACEHOLDER.sub("", stripped)
+        if re.search(r"[A-Za-z]{2,}", stripped):
+            unchanged.append(source)
 
-print(f"Wrote {out}: {len(rows)} entries; {len(AR)} curated keys; {auto_count} machine-translated.")
-print(f"Unchanged Latin-only strings: {len(latin_only)}")
-if len(latin_only) > 15:
-    print("Examples:", latin_only[:15])
-    sys.exit("Too many untranslated Latin-only strings remain")
+print(f"Wrote {out}: {len(rows)} entries, {len(AR)} curated, {len(pending)} offline-translated.")
+print(f"Unchanged ordinary Latin strings: {len(unchanged)}")
+if unchanged:
+    print("Examples:", unchanged[:20])
+if len(unchanged) > 20:
+    raise SystemExit("Too many untranslated Latin strings remain")
