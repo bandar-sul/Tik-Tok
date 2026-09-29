@@ -44,23 +44,39 @@ jobs:
             https://github.com/MorpheApp/morphe-desktop/releases/download/v1.17.0/morphe-desktop-1.17.0-all.jar
           echo "8cf6a9eab4ee9dab146bddc24681897851564f53116baec11f36ba2fa2f589be  work/morphe-desktop-1.17.0-all.jar" | sha256sum -c -
 
-      - name: Download exact TikTok 47.0.3 arm64 nodpi
+      - name: Download TikTok 47.0.3 from APKPure
         shell: bash
         run: |
           set -euo pipefail
-          PAGE='https://www.apkmirror.com/apk/tiktok-pte-ltd/tik-tok-including-musical-ly/tiktok-47-0-3-release/tiktok-47-0-3-4-android-apk-download/'
-          UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36'
-          curl -fLsS -A "$UA" -c work/cookies.txt "$PAGE" -o work/page.html
-          LINK=$(python3 -c 'import html,re; s=open("work/page.html",encoding="utf-8",errors="ignore").read(); m=re.search(r"href=\\\"([^\\\"]*?/download/\\?forcebaseapk=true(?:&amp;|&)key=[^\\\"]+)\\\"",s); print(html.unescape(m.group(1)) if m else "")')
-          test -n "$LINK"
-          case "$LINK" in
-            http*) URL="$LINK" ;;
-            *) URL="https://www.apkmirror.com$LINK" ;;
-          esac
-          sleep 16
-          curl -fL --retry 3 -A "$UA" -b work/cookies.txt -e "$PAGE" "$URL" -o work/TikTok-47.0.3.apk
-          test "$(stat -c%s work/TikTok-47.0.3.apk)" = "342279696"
-          echo "028ece4dab2eeeb1ba1b67c621de7851c95be0050d94070648d429a859203a6a  work/TikTok-47.0.3.apk" | sha256sum -c -
+          mkdir -p work
+          URLS=(
+            "https://d.apkpure.com/b/XAPK/com.zhiliaoapp.musically?versionCode=2024700030"
+            "https://d.apkpure.com/b/XAPK/com.zhiliaoapp.musically?version=47.0.3"
+            "https://d.apkpure.com/b/APK/com.zhiliaoapp.musically?versionCode=2024700030"
+          )
+          ok=0
+          for u in "${URLS[@]}"; do
+            echo "Trying $u"
+            rm -f work/TikTok-47.0.3.input
+            if curl -fL --retry 2 -A "Mozilla/5.0" "$u" -o work/TikTok-47.0.3.input; then
+              sz=$(stat -c%s work/TikTok-47.0.3.input || echo 0)
+              echo "Downloaded $sz bytes"
+              if [ "$sz" -gt 100000000 ]; then
+                ok=1
+                break
+              fi
+            fi
+          done
+          test "$ok" = "1"
+          file work/TikTok-47.0.3.input
+          sha256sum work/TikTok-47.0.3.input
+          if unzip -t work/TikTok-47.0.3.input >/dev/null 2>&1; then
+            mv work/TikTok-47.0.3.input work/TikTok-47.0.3.xapk
+            unzip -l work/TikTok-47.0.3.xapk | head -n 80
+            unzip -p work/TikTok-47.0.3.xapk manifest.json 2>/dev/null | head -c 4000 || true
+          else
+            mv work/TikTok-47.0.3.input work/TikTok-47.0.3.apk
+          fi
 
       - name: Patch TikTok unsigned
         run: |
@@ -71,7 +87,7 @@ jobs:
             --bytecode-mode FULL \
             --verify-with-sdk /usr/local/lib/android/sdk \
             -o work/TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED.apk \
-            work/TikTok-47.0.3.apk
+            "$(test -f work/TikTok-47.0.3.xapk && echo work/TikTok-47.0.3.xapk || echo work/TikTok-47.0.3.apk)"
           ls -lh work/TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED.apk
           sha256sum work/TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED.apk > work/PATCHED-SHA256.txt
 
