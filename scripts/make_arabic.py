@@ -119,28 +119,31 @@ AR = {
     "Yes":"نعم",
 }
 
-PLACEHOLDER = re.compile(r"%(?:\d+\$)?[a-zA-Z]|%%")
-BRANDS = ["Hushfeed", "TikTok", "Google", "SIM", "JSON", "URL", "Android", "Circle to Search"]
+PLACEHOLDER = re.compile(r"%(?:\\d+\\$)?[a-zA-Z]|%%")
+BRANDS = ["Circle to Search", "Hushfeed", "TikTok", "Android", "Google", "SIM", "JSON", "URL"]
+PROTECTED = re.compile(
+    "(" + PLACEHOLDER.pattern + "|" + "|".join(re.escape(x) for x in sorted(BRANDS, key=len, reverse=True)) + ")"
+)
 
-def protect(text):
-    items = []
-    def ph(m):
-        token = f"ZXPH{len(items)}XZ"
-        items.append((token, m.group(0)))
-        return token
-    text = PLACEHOLDER.sub(ph, text)
-    for brand in BRANDS:
-        if brand in text:
-            token = f"ZXBR{len(items)}XZ"
-            items.append((token, brand))
-            text = text.replace(brand, token)
-    return text, items
-
-def restore(text, items):
-    for token, value in items:
-        # Marian can add spaces around synthetic tokens.
-        text = re.sub(r"\\s*"+re.escape(token)+r"\\s*", value, text)
-    return text.strip()
+def split_for_translation(source):
+    """Return literal/protected parts and translatable text parts without ever feeding protected tokens to MT."""
+    parts = []
+    for piece in PROTECTED.split(source):
+        if not piece:
+            continue
+        if PROTECTED.fullmatch(piece):
+            parts.append(("literal", piece))
+            continue
+        # Preserve surrounding whitespace exactly; translate only the human-language core.
+        m = re.match(r"^(\\s*)(.*?)(\\s*)$", piece, flags=re.S)
+        lead, core, tail = m.groups()
+        if lead:
+            parts.append(("literal", lead))
+        if core:
+            parts.append(("text", core))
+        if tail:
+            parts.append(("literal", tail))
+    return parts
 
 with src.open("r", encoding="utf-8", newline="") as f:
     rows = list(csv.DictReader(f))
@@ -151,24 +154,30 @@ tokenizer = MarianTokenizer.from_pretrained(model_name)
 model = MarianMTModel.from_pretrained(model_name)
 model.eval()
 
-pending = []
-protected_meta = {}
 translated = dict(AR)
+parts_by_source = {}
+unique_texts = []
+seen_texts = set()
 
 for row in rows:
     source = row["source"]
     if source in translated:
         continue
-    text, meta = protect(source)
-    pending.append((source, text))
-    protected_meta[source] = meta
+    parts = split_for_translation(source)
+    parts_by_source[source] = parts
+    for kind, value in parts:
+        if kind == "text" and value not in seen_texts:
+            seen_texts.add(value)
+            unique_texts.append(value)
 
-BATCH = 12
-for start in range(0, len(pending), BATCH):
-    batch = pending[start:start+BATCH]
-    texts = [x[1] for x in batch]
+print(f"Unique translatable fragments: {len(unique_texts)}", flush=True)
+
+fragment_translation = {}
+BATCH = 16
+for start_at in range(0, len(unique_texts), BATCH):
+    batch = unique_texts[start_at:start_at+BATCH]
     encoded = tokenizer(
-        texts,
+        batch,
         return_tensors="pt",
         padding=True,
         truncation=True,
@@ -182,14 +191,32 @@ for start in range(0, len(pending), BATCH):
             early_stopping=True,
         )
     outputs = tokenizer.batch_decode(generated, skip_special_tokens=True)
-    for (source, _), target in zip(batch, outputs):
-        target = restore(target, protected_meta[source])
-        wanted = sorted(PLACEHOLDER.findall(source))
-        got = sorted(PLACEHOLDER.findall(target))
-        if wanted != got:
-            raise SystemExit(f"Placeholder mismatch: {source!r} -> {target!r}: {wanted} != {got}")
-        translated[source] = target
-    print(f"Translated {min(start+BATCH, len(pending))}/{len(pending)} non-curated strings", flush=True)
+    for source_fragment, target_fragment in zip(batch, outputs):
+        fragment_translation[source_fragment] = target_fragment.strip()
+    print(f"Translated fragments {min(start_at+BATCH, len(unique_texts))}/{len(unique_texts)}", flush=True)
+
+for source, parts in parts_by_source.items():
+    rebuilt = []
+    for kind, value in parts:
+        rebuilt.append(value if kind == "literal" else fragment_translation[value])
+    target = "".join(rebuilt).strip()
+
+    wanted = sorted(PLACEHOLDER.findall(source))
+    got = sorted(PLACEHOLDER.findall(target))
+    if wanted != got:
+        raise SystemExit(f"Placeholder mismatch: {source!r} -> {target!r}: {wanted} != {got}")
+
+    # Protected product/brand tokens that occur in the source must survive literally.
+    for brand in BRANDS:
+        if brand in source and brand not in target:
+            raise SystemExit(f"Protected token lost: {brand!r}: {source!r} -> {target!r}")
+
+    translated[source] = target
+
+# Coverage checks before generating ar.tsv.
+missing = [row["source"] for row in rows if row["source"] not in translated]
+if missing:
+    raise SystemExit(f"Missing translations: {len(missing)}; examples: {missing[:10]}")
 
 lines = ["# Arabic translation for Hushfeed 0.64.0 — full static Arabic"]
 for row in rows:
@@ -212,7 +239,7 @@ for source, target in translated.items():
         if re.search(r"[A-Za-z]{2,}", stripped):
             unchanged.append(source)
 
-print(f"Wrote {out}: {len(rows)} entries, {len(AR)} curated, {len(pending)} offline-translated.")
+print(f"Wrote {out}: {len(rows)} entries, {len(AR)} curated, {len(rows)-len(AR)} offline-translated.")
 print(f"Unchanged ordinary Latin strings: {len(unchanged)}")
 if unchanged:
     print("Examples:", unchanged[:20])
