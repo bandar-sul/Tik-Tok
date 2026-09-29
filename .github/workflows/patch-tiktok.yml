@@ -1,0 +1,109 @@
+name: Patch TikTok 47.0.3 Arabic Hushfeed
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/patch-tiktok.yml'
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GITHUB_ACTOR: ${{ github.actor }}
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Clone Hushfeed 0.64.0
+        run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
+
+      - name: Add Arabic localization
+        run: python3 scripts/make_arabic.py hushfeed
+
+      - name: Configure Android SDK
+        run: echo "sdk.dir=/usr/local/lib/android/sdk" > hushfeed/local.properties
+
+      - name: Build Arabic Hushfeed bundle
+        working-directory: hushfeed
+        run: |
+          chmod +x gradlew
+          ./gradlew --write-verification-metadata sha256 :patches:buildAndroid :patches:generatePatchesList --stacktrace
+          ./gradlew :patches:buildAndroid :patches:generatePatchesList --stacktrace
+
+      - name: Collect MPP
+        run: |
+          mkdir -p work
+          MPP="$(find hushfeed/patches/build -type f -name '*.mpp' | head -n1)"
+          test -n "$MPP"
+          cp "$MPP" work/Hushfeed-0.64.0-Arabic.mpp
+          sha256sum work/Hushfeed-0.64.0-Arabic.mpp
+
+      - name: Download Morphe Desktop 1.17.0
+        run: |
+          curl -fL --retry 3 \
+            -o work/morphe-desktop-1.17.0-all.jar \
+            https://github.com/MorpheApp/morphe-desktop/releases/download/v1.17.0/morphe-desktop-1.17.0-all.jar
+          echo "8cf6a9eab4ee9dab146bddc24681897851564f53116baec11f36ba2fa2f589be  work/morphe-desktop-1.17.0-all.jar" | sha256sum -c -
+
+      - name: Download exact TikTok 47.0.3 arm64 nodpi
+        shell: bash
+        run: |
+          set -euo pipefail
+          PAGE='https://www.apkmirror.com/apk/tiktok-pte-ltd/tik-tok-including-musical-ly/tiktok-47-0-3-release/tiktok-47-0-3-4-android-apk-download/'
+          UA='Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/140 Safari/537.36'
+          curl -fLsS -A "$UA" -c work/cookies.txt "$PAGE" -o work/page.html
+          LINK=$(python3 - <<'PY'
+import html,re
+s=open('work/page.html',encoding='utf-8',errors='ignore').read()
+m=re.search(r'href="([^"]*?/download/\?forcebaseapk=true&amp;key=[^"]+)"',s)
+if not m:
+    m=re.search(r'href="([^"]*?/download/\?forcebaseapk=true&key=[^"]+)"',s)
+if not m:
+    raise SystemExit("APKMirror download nonce not found")
+print(html.unescape(m.group(1)))
+PY
+          )
+          case "$LINK" in
+            http*) URL="$LINK" ;;
+            *) URL="https://www.apkmirror.com$LINK" ;;
+          esac
+          sleep 16
+          curl -fL --retry 3 -A "$UA" -b work/cookies.txt -e "$PAGE" "$URL" -o work/TikTok-47.0.3.apk
+          test "$(stat -c%s work/TikTok-47.0.3.apk)" = "342279696"
+          echo "028ece4dab2eeeb1ba1b67c621de7851c95be0050d94070648d429a859203a6a  work/TikTok-47.0.3.apk" | sha256sum -c -
+
+      - name: Patch TikTok unsigned
+        run: |
+          java -jar work/morphe-desktop-1.17.0-all.jar patch \
+            -p work/Hushfeed-0.64.0-Arabic.mpp \
+            --unsigned \
+            --striplibs arm64-v8a \
+            --bytecode-mode FULL \
+            --verify-with-sdk /usr/local/lib/android/sdk \
+            -o work/TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED.apk \
+            work/TikTok-47.0.3.apk
+          ls -lh work/TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED.apk
+          sha256sum work/TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED.apk > work/PATCHED-SHA256.txt
+
+      - name: Upload patched APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED
+          path: |
+            work/TikTok-47.0.3-Hushfeed-0.64.0-Arabic-UNSIGNED.apk
+            work/PATCHED-SHA256.txt
+          if-no-files-found: error
+          retention-days: 3
