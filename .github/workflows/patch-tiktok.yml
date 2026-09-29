@@ -8,15 +8,12 @@ on:
 
 permissions:
   contents: read
-  packages: read
+  actions: read
 
 jobs:
   patch:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
-    env:
-      GITHUB_ACTOR: ${{ github.actor }}
-      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    timeout-minutes: 45
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -27,28 +24,17 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Clone Hushfeed 0.64.0
-        run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
+      - name: Download Arabic Hushfeed artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: Hushfeed-0.64.0-Arabic
+          path: work
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: 36491025120
 
-      - name: Add Arabic localization
-        run: python3 scripts/make_arabic.py hushfeed
-
-      - name: Configure Android SDK
-        run: echo "sdk.dir=/usr/local/lib/android/sdk" > hushfeed/local.properties
-
-      - name: Build Arabic Hushfeed bundle
-        working-directory: hushfeed
+      - name: Verify MPP
         run: |
-          chmod +x gradlew
-          ./gradlew --write-verification-metadata sha256 :patches:buildAndroid :patches:generatePatchesList --stacktrace
-          ./gradlew :patches:buildAndroid :patches:generatePatchesList --stacktrace
-
-      - name: Collect MPP
-        run: |
-          mkdir -p work
-          MPP="$(find hushfeed/patches/build -type f -name '*.mpp' | head -n1)"
-          test -n "$MPP"
-          cp "$MPP" work/Hushfeed-0.64.0-Arabic.mpp
+          test -f work/Hushfeed-0.64.0-Arabic.mpp
           sha256sum work/Hushfeed-0.64.0-Arabic.mpp
 
       - name: Download Morphe Desktop 1.17.0
