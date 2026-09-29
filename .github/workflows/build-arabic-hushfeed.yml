@@ -29,8 +29,13 @@ jobs:
       - name: Clone Hushfeed 0.64.0
         run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
 
-      - name: Install Arabic translation dependency
-        run: python3 -m pip install --disable-pip-version-check -q deep-translator
+      - name: Install offline Arabic translation dependencies
+        run: |
+          python3 -m pip install --disable-pip-version-check -q transformers sentencepiece sacremoses
+          python3 - <<'PY'
+          import torch
+          print("torch", torch.__version__)
+          PY
 
       - name: Add Arabic localization
         run: |
