@@ -30,7 +30,12 @@ jobs:
         run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
 
       - name: Add Arabic localization
-        run: python3 scripts/make_arabic.py hushfeed
+        run: |
+          python3 scripts/make_arabic.py hushfeed
+          cd hushfeed
+          python3 scripts/gen-l10n.py
+          grep -q 'case "ar":' extensions/tiktok/src/main/java/app/morphe/extension/tiktok/settings/L10nTranslations.java
+          grep -q 'البحث في الإعدادات' extensions/tiktok/src/main/java/app/morphe/extension/tiktok/settings/L10nTranslations.java
 
       - name: Configure Android SDK
         run: echo "sdk.dir=/usr/local/lib/android/sdk" > hushfeed/local.properties
