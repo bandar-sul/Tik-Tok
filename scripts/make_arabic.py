@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
 import csv
+import re
 import sys
+import time
 from pathlib import Path
+
+from deep_translator import GoogleTranslator
 
 repo = Path(sys.argv[1] if len(sys.argv) > 1 else "hushfeed")
 src = repo / "extensions/tiktok/src/main/l10n/en.csv"
 out = repo / "extensions/tiktok/src/main/l10n/ar.tsv"
 
+# Curated translations for the most visible Hushfeed UI.
 AR = {
     "About":"حول",
     "Activity":"النشاط",
@@ -30,7 +35,6 @@ AR = {
     "Block location":"منع الموقع",
     "Blocked":"محظور",
     "Browse":"استعراض",
-    "Camera and microphone in use":"الكاميرا والميكروفون قيد الاستخدام",
     "Cancel":"إلغاء",
     "Captions":"الترجمة النصية",
     "Comments":"التعليقات",
@@ -39,8 +43,6 @@ AR = {
     "Custom":"مخصص",
     "Default":"الافتراضي",
     "Diagnostics":"التشخيص",
-    "Disable login requirement":"إلغاء فرض تسجيل الدخول",
-    "Disable telemetry":"تعطيل القياسات والتتبع",
     "Done":"تم",
     "Download":"تنزيل",
     "Downloads":"التنزيلات",
@@ -117,16 +119,84 @@ AR = {
     "Yes":"نعم",
 }
 
+PLACEHOLDER = re.compile(r"%(?:\d+\$)?[a-zA-Z]|%%")
+BRAND_TOKENS = ["Hushfeed", "TikTok", "Google", "SIM", "JSON", "URL", "Android", "Circle to Search"]
+
+def protect(text):
+    tokens = []
+    def sub(m):
+        key = f"ZXPH{len(tokens)}XZ"
+        tokens.append((key, m.group(0)))
+        return key
+    text = PLACEHOLDER.sub(sub, text)
+    for brand in BRAND_TOKENS:
+        if brand in text:
+            key = f"ZXBR{len(tokens)}XZ"
+            tokens.append((key, brand))
+            text = text.replace(brand, key)
+    return text, tokens
+
+def restore(text, tokens):
+    for key, value in tokens:
+        text = text.replace(key, value)
+    return text
+
+def translate_one(translator, source):
+    protected, tokens = protect(source)
+    for attempt in range(4):
+        try:
+            result = translator.translate(protected)
+            if not result:
+                raise RuntimeError("empty translation")
+            result = restore(result, tokens)
+            # Ensure formatting placeholders are byte-for-byte preserved.
+            if sorted(PLACEHOLDER.findall(source)) != sorted(PLACEHOLDER.findall(result)):
+                raise RuntimeError(f"placeholder mismatch: {source!r} -> {result!r}")
+            return result
+        except Exception as e:
+            if attempt == 3:
+                raise
+            time.sleep(1.5 * (attempt + 1))
+    raise RuntimeError("unreachable")
+
 with src.open("r", encoding="utf-8", newline="") as f:
     rows = list(csv.DictReader(f))
 
-lines = ["# Arabic translation for Hushfeed 0.64.0"]
+translator = GoogleTranslator(source="en", target="ar")
+translated = {}
+auto_count = 0
+
+for index, row in enumerate(rows, 1):
+    source = row["source"]
+    if source in AR:
+        target = AR[source]
+    else:
+        target = translate_one(translator, source)
+        auto_count += 1
+        if auto_count % 50 == 0:
+            print(f"Auto-translated {auto_count} strings...", flush=True)
+    translated[source] = target
+
+lines = ["# Arabic translation for Hushfeed 0.64.0 — full Arabic"]
 for row in rows:
     source = row["source"]
-    target = AR.get(source, source)
+    target = translated[source]
     source = source.replace("\t", " ").replace("\n", "\\n")
     target = target.replace("\t", " ").replace("\n", "\\n")
     lines.append(source + "\t" + target)
 
 out.write_text("\n".join(lines) + "\n", encoding="utf-8")
-print(f"Wrote {out} ({len(rows)} entries, Arabic core UI + English fallback)")
+
+# Fail the build if ordinary Latin-only UI strings were silently left untranslated.
+latin_only = []
+for source, target in translated.items():
+    has_letters = re.search(r"[A-Za-z]", target)
+    has_arabic = re.search(r"[\u0600-\u06FF]", target)
+    if has_letters and not has_arabic and target == source and source not in BRAND_TOKENS:
+        latin_only.append(source)
+
+print(f"Wrote {out}: {len(rows)} entries; {len(AR)} curated keys; {auto_count} machine-translated.")
+print(f"Unchanged Latin-only strings: {len(latin_only)}")
+if len(latin_only) > 15:
+    print("Examples:", latin_only[:15])
+    sys.exit("Too many untranslated Latin-only strings remain")
