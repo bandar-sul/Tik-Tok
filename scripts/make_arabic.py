@@ -146,6 +146,8 @@ def translate_one(translator, source):
     for attempt in range(4):
         try:
             result = translator.translate(protected)
+            # Stay comfortably below Google's documented request-rate limit.
+            time.sleep(0.35)
             if not result:
                 raise RuntimeError("empty translation")
             result = restore(result, tokens)
@@ -156,7 +158,13 @@ def translate_one(translator, source):
         except Exception as e:
             if attempt == 3:
                 raise
-            time.sleep(1.5 * (attempt + 1))
+            name = type(e).__name__
+            if "TooManyRequests" in name:
+                wait = 20 * (attempt + 1)
+            else:
+                wait = 2.0 * (attempt + 1)
+            print(f"Translation retry after {name}; waiting {wait}s", flush=True)
+            time.sleep(wait)
     raise RuntimeError("unreachable")
 
 with src.open("r", encoding="utf-8", newline="") as f:
