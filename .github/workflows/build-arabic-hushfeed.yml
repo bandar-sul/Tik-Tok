@@ -1,4 +1,4 @@
-name: Build Arabic Hushfeed Bundle
+name: Build Hushfeed 0.66.0 Bundle
 
 on:
   push:
@@ -26,25 +26,8 @@ jobs:
           distribution: temurin
           java-version: '21'
 
-      - name: Clone Hushfeed 0.64.0
-        run: git clone --depth 1 --branch v0.64.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
-
-      - name: Install offline Arabic translation dependencies
-        run: |
-          python3 -m pip install --disable-pip-version-check -q --index-url https://download.pytorch.org/whl/cpu torch
-          python3 -m pip install --disable-pip-version-check -q transformers sentencepiece sacremoses
-          python3 - <<'PY'
-          import torch
-          print("torch", torch.__version__)
-          PY
-
-      - name: Add Arabic localization
-        run: |
-          python3 scripts/make_arabic.py hushfeed
-          cd hushfeed
-          python3 scripts/gen-l10n.py
-          grep -q 'case "ar":' extensions/tiktok/src/main/java/app/morphe/extension/tiktok/settings/L10nTranslations.java
-          grep -q 'البحث في الإعدادات' extensions/tiktok/src/main/java/app/morphe/extension/tiktok/settings/L10nTranslations.java
+      - name: Clone Hushfeed 0.66.0
+        run: git clone --depth 1 --branch v0.66.0 https://github.com/SysAdminDoc/HushFeed.git hushfeed
 
       - name: Configure Android SDK
         run: echo "sdk.dir=/usr/local/lib/android/sdk" > hushfeed/local.properties
@@ -65,14 +48,14 @@ jobs:
           mkdir -p output
           MPP="$(find hushfeed/patches/build -type f -name '*.mpp' | head -n1)"
           test -n "$MPP"
-          cp "$MPP" output/Hushfeed-0.64.0-Arabic-Full.mpp
-          cp hushfeed/patches-list.json output/patches-list-arabic.json || true
-          sha256sum output/Hushfeed-0.64.0-Arabic-Full.mpp > output/SHA256SUMS.txt
+          cp "$MPP" output/Hushfeed-0.66.0.mpp
+          cp hushfeed/patches-list.json output/patches-list.json || true
+          sha256sum output/Hushfeed-0.66.0.mpp > output/SHA256SUMS.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: Hushfeed-0.64.0-Arabic-Full
+          name: Hushfeed-0.66.0
           path: output/
           if-no-files-found: error
           retention-days: 14
